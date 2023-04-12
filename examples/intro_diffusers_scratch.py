@@ -78,7 +78,7 @@ def train(model, dataloader, loss_fn, optimizer, epoch, device):
     return losses
 
 
-def test(model, dataloader, epoch, device):
+def test(model, dataloader, epoch, work_dirs, device):
     model.eval()
     # Keeping a record of the losses for later viewing
     x, y = next(iter(dataloader))
@@ -104,23 +104,55 @@ def test(model, dataloader, epoch, device):
     axs[2].set_title('Network Predictions')
     axs[2].imshow(torchvision.utils.make_grid(preds)[0].clip(0, 1),
                   cmap='Greys')
-    fig_name = f'denoising_{epoch}.png'
+    fig_name = f'{work_dirs}/epoch_{epoch}.png'
+    fig.savefig(fig_name)
+    return 0
+
+
+def generate(model, n_steps, work_dirs, epoch, device):
+    x = torch.rand(8, 1, 28, 28).to(device)  # Start from random
+    step_history = [x.detach().cpu()]
+    pred_output_history = []
+
+    for i in range(n_steps):
+        with torch.no_grad():  # No need to track gradients during inference
+            pred = model(x)  # Predict the denoised x0
+        pred_output_history.append(
+            pred.detach().cpu())  # Store model output for plotting
+        mix_factor = 1 / (n_steps - i
+                          )  # How much we move towards the prediction
+        x = x * (1 -
+                 mix_factor) + pred * mix_factor  # Move part of the way there
+        step_history.append(x.detach().cpu())  # Store step for plotting
+
+    fig, axs = plt.subplots(n_steps, 2, figsize=(15, 7), sharex=True)
+    axs[0, 0].set_title('x (model input)')
+    axs[0, 1].set_title('model prediction')
+    for i in range(n_steps):
+        axs[i, 0].imshow(torchvision.utils.make_grid(step_history[i])[0].clip(
+            0, 1),
+                         cmap='Greys')
+        axs[i, 1].imshow(torchvision.utils.make_grid(
+            pred_output_history[i])[0].clip(0, 1),
+                         cmap='Greys')
+    fig_name = f'{work_dirs}/denosing_{epoch}.png'
     fig.savefig(fig_name)
     return 0
 
 
 def train_loop(model, train_dataloader, test_dataloader, loss_fn, optimizer,
-               n_epochs, device):
+               n_epochs, work_dirs, device):
     total_losses = []
     for epoch in range(n_epochs):
         losses = train(model, train_dataloader, loss_fn, optimizer, epoch,
                        device)
-        test(model, test_dataloader, epoch, device)
+        test(model, test_dataloader, epoch, work_dirs, device)
+        generate(model, 5, work_dirs, epoch, device)
         total_losses += losses
     return total_losses
 
 
-def main():
+def main(work_dirs):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -143,7 +175,7 @@ def main():
                                 batch_size=batch_size,
                                 shuffle=True)
     # How many runs through the data should we do?
-    n_epochs = 3
+    n_epochs = 5
     # Create the network
     net = BasicUNet()
     net.to(device)
@@ -153,13 +185,14 @@ def main():
     opt = torch.optim.Adam(net.parameters(), lr=1e-3)
     # The training loop
     losses = train_loop(net, train_dataloader, test_dataloder, loss_fn, opt,
-                        n_epochs, device)
+                        n_epochs, work_dirs, device)
 
     # View the loss curve
+    fig, axs = plt.subplots(1, 1, figsize=(12, 8))
     plt.plot(losses)
     plt.ylim(0, 0.1)
-    plt.savefig('loss.png')
+    fig.savefig(f'{work_dirs}/loss.png')
 
 
 if __name__ == '__main__':
-    main()
+    main('work_dirs')
