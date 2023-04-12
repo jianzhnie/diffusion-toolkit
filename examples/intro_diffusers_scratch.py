@@ -119,10 +119,10 @@ def generate(model, n_steps, work_dirs, epoch, device):
             pred = model(x)  # Predict the denoised x0
         pred_output_history.append(
             pred.detach().cpu())  # Store model output for plotting
-        mix_factor = 1 / (n_steps - i
-                          )  # How much we move towards the prediction
-        x = x * (1 -
-                 mix_factor) + pred * mix_factor  # Move part of the way there
+        mix_factor = 1 / (n_steps - i)
+        # How much we move towards the prediction
+        x = x * (1 - mix_factor) + pred * mix_factor
+        # Move part of the way there
         step_history.append(x.detach().cpu())  # Store step for plotting
 
     fig, axs = plt.subplots(n_steps, 2, figsize=(15, 7), sharex=True)
