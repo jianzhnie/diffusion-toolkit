@@ -124,7 +124,6 @@ def main():
     image_size = 32
     # You can lower your batch size if you're running out of GPU memory
     batch_size = 64
-
     # Define data augmentations
     preprocess = transforms.Compose([
         transforms.Resize((image_size, image_size)),  # Resize
