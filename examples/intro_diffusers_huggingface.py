@@ -56,7 +56,7 @@ def train(model, train_dataloader, optimizer, noise_scheduler, epoch, device):
         optimizer.step()
         optimizer.zero_grad()
         losses.append(loss.item())
-        print(f'Epoch:{epoch+1}, bacth: {step},  loss: {avg_loss:.4f}')
+        print(f'Epoch:{epoch+1}, bacth: {step},  loss: {loss:.4f}')
     avg_loss = sum(losses) / len(train_dataloader)
     print(f'Epoch:{epoch+1}, train loss: {avg_loss:.4f}')
 
@@ -87,7 +87,7 @@ def test(model, test_dataloader, noise_scheduler, epoch, device):
         # Calculate the loss
         loss = F.mse_loss(noise_pred, noise)
         losses.append(loss.item())
-        print(f'Epoch:{epoch+1}, bacth: {step},  loss: {avg_loss:.4f}')
+        print(f'Epoch:{epoch+1}, bacth: {step},  loss: {loss:.4f}')
 
     avg_loss = sum(losses) / len(test_dataloader)
     print(f'Epoch:{epoch+1}, test loss: {avg_loss:.4f}')
@@ -95,18 +95,14 @@ def test(model, test_dataloader, noise_scheduler, epoch, device):
     return losses
 
 
-def train_loop(model, train_dataloader, test_dataloader, optimizer,
-               noise_scheduler, epochs, device):
+def train_loop(model, train_dataloader, optimizer, noise_scheduler, epochs,
+               device):
     train_losses = []
-    test_losses = []
     for epoch in range(epochs):
         train_loss = train(model, train_dataloader, optimizer, noise_scheduler,
                            epoch, device)
-        test_loss = test(model, test_dataloader, noise_scheduler, epoch,
-                         device)
         train_losses.extend(train_loss)
-        test_losses.extend(test_loss)
-    return train_losses, test_losses
+    return train_losses
 
 
 def main():
@@ -182,8 +178,14 @@ def main():
     # Training loop
     optimizer = torch.optim.AdamW(model.parameters(), lr=4e-4)
 
-    train_losses, test_losses = train_loop(model, train_dataloader, optimizer,
-                                           noise_scheduler, 10, device)
+    train_losses, test_losses = train_loop(
+        model,
+        train_dataloader,
+        optimizer,
+        noise_scheduler,
+        epochs=10,
+        device=device,
+    )
 
     fig, axs = plt.subplots(2, 2, figsize=(12, 12))
     axs[0].plot(train_losses)
