@@ -177,7 +177,7 @@ def main():
     # Training loop
     optimizer = torch.optim.AdamW(model.parameters(), lr=4e-4)
 
-    train_losses, test_losses = train_loop(
+    train_losses = train_loop(
         model,
         train_dataloader,
         optimizer,
@@ -186,11 +186,9 @@ def main():
         device=device,
     )
 
-    fig, axs = plt.subplots(2, 2, figsize=(12, 12))
+    fig, axs = plt.subplots(1, 2, figsize=(12, 4))
     axs[0].plot(train_losses)
     axs[1].plot(np.log(train_losses))
-    axs[2].plot(test_losses)
-    axs[3].plot(np.log(test_losses))
     plt.savefig('losses.png')
 
 
