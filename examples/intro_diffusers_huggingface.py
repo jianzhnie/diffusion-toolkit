@@ -3,8 +3,7 @@ import torch
 import torch.nn.functional as F
 import torchvision
 from datasets import load_dataset
-from diffusers import (DDPMPipeline, DDPMScheduler, StableDiffusionPipeline,
-                       UNet2DModel)
+from diffusers import (DDPMPipeline, DDPMScheduler, UNet2DModel)
 from matplotlib import pyplot as plt
 from PIL import Image
 from torchvision import transforms
@@ -57,6 +56,7 @@ def train(model, train_dataloader, optimizer, noise_scheduler, epoch, device):
         optimizer.step()
         optimizer.zero_grad()
         losses.append(loss.item())
+        print(f'Epoch:{epoch+1}, bacth: {step},  loss: {avg_loss:.4f}')
     avg_loss = sum(losses) / len(train_dataloader)
     print(f'Epoch:{epoch+1}, train loss: {avg_loss:.4f}')
 
@@ -87,6 +87,7 @@ def test(model, test_dataloader, noise_scheduler, epoch, device):
         # Calculate the loss
         loss = F.mse_loss(noise_pred, noise)
         losses.append(loss.item())
+        print(f'Epoch:{epoch+1}, bacth: {step},  loss: {avg_loss:.4f}')
 
     avg_loss = sum(losses) / len(test_dataloader)
     print(f'Epoch:{epoch+1}, test loss: {avg_loss:.4f}')
@@ -111,23 +112,6 @@ def train_loop(model, train_dataloader, test_dataloader, optimizer,
 def main():
     # Mac users may need device = 'mps' (untested)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # Check out https://huggingface.co/sd-dreambooth-library for loads of models from the community
-    model_id = 'sd-dreambooth-library/mr-potato-head'
-
-    # Load the pipeline
-    pipe = StableDiffusionPipeline.from_pretrained(
-        model_id, torch_dtype=torch.float16).to(device)
-    prompt = 'an abstract oil painting of sks mr potato head by picasso'
-    images = pipe(
-        prompt,
-        num_inference_steps=50,
-        guidance_scale=7.5,
-        batch_size=8,
-    )
-    # View the result
-    make_grid(images)
-
     # Load the butterfly pipeline
     butterfly_pipeline = DDPMPipeline.from_pretrained(
         'johnowhitaker/ddpm-butterflies-32px').to(device)
@@ -136,14 +120,10 @@ def main():
     images = butterfly_pipeline(batch_size=8).images
 
     # View the result
-    make_grid(images)
+    make_grid(images, filename="image_2.png")
 
     dataset = load_dataset('huggan/smithsonian_butterflies_subset',
                            split='train')
-
-    # Or load images from a local folder
-    # dataset = load_dataset("imagefolder", data_dir="path/to/folder")
-
     # We'll train on 32-pixel square images, but you can try larger sizes too
     image_size = 32
     # You can lower your batch size if you're running out of GPU memory
