@@ -1,188 +1,217 @@
+import numpy as np
 import torch
-from diffusers import UNet2DModel
+import torch.nn.functional as F
+import torchvision
+from datasets import load_dataset
+from diffusers import (DDPMPipeline, DDPMScheduler, StableDiffusionPipeline,
+                       UNet2DModel)
 from matplotlib import pyplot as plt
-from torch import nn
-from torch.utils.data import DataLoader
-from torchvision.datasets import MNIST
-from torchvision.transforms import ToTensor
-from torchvision.utils import make_grid
+from PIL import Image
+from torchvision import transforms
 
 
-def corrupt(x, amount):
-    """Corrupt the input `x` by mixing it with noise according to `amount`"""
-    noise = torch.rand_like(x)
-    amount = amount.view(-1, 1, 1, 1)  # Sort shape so broadcasting works
-    return x * (1 - amount) + noise * amount
+def show_images(x):
+    """Given a batch of images x, make a grid and convert to PIL."""
+    x = x * 0.5 + 0.5  # Map from (-1, 1) back to (0, 1)
+    grid = torchvision.utils.make_grid(x)
+    grid_im = grid.detach().cpu().permute(1, 2, 0).clip(0, 1) * 255
+    grid_im = Image.fromarray(np.array(grid_im).astype(np.uint8))
+    return grid_im
 
 
-def train(model, dataloader, loss_fn, optimizer, epoch, device):
-    """Train the model for one epoch."""
+def make_grid(images, size=64, filename='output.png'):
+    """Given a list of PIL images, stack them together into a line for easy
+    viewing."""
+    output_im = Image.new('RGB', (size * len(images), size))
+    for i, im in enumerate(images):
+        output_im.paste(im.resize((size, size)), (i * size, 0))
+    output_im.save(filename)
+    return output_im
+
+
+def train(model, train_dataloader, optimizer, noise_scheduler, epoch, device):
     model.train()
     losses = []
-    # Keeping a record of the losses for later viewing
-    for x, y in dataloader:
-        # Get some data and prepare the corrupted version
-        # Data on the GPU
-        x = x.to(device)
-        # Pick random noise amounts
-        noise_amount = torch.rand(x.shape[0]).to(device)
-        # Create our noisy x
-        noisy_x = corrupt(x, noise_amount)
-        # Get the model prediction
-        pred = model(noisy_x, 0).sample
-        # Calculate the loss
-        loss = loss_fn(pred, x)
-        # How close is the output to the true 'clean' x?
-        # Backprop and update the params:
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        losses.append(loss.item())
+    for step, batch in enumerate(train_dataloader):
+        clean_images = batch['images'].to(device)
+        # Sample noise to add to the images
+        noise = torch.randn(clean_images.shape).to(clean_images.device)
+        bs = clean_images.shape[0]
 
-    # Print our the average of the loss values for this epoch:
-    avg_loss = sum(losses) / len(dataloader)
-    print(
-        f'Finished epoch {epoch}. Average loss for this epoch: {avg_loss:05f}')
+        # Sample a random timestep for each image
+        timesteps = torch.randint(0,
+                                  noise_scheduler.num_train_timesteps, (bs, ),
+                                  device=clean_images.device).long()
+
+        # Add noise to the clean images according to the noise magnitude at each timestep
+        noisy_images = noise_scheduler.add_noise(clean_images, noise,
+                                                 timesteps)
+
+        # Get the model prediction
+        noise_pred = model(noisy_images, timesteps, return_dict=False)[0]
+
+        # Calculate the loss
+        loss = F.mse_loss(noise_pred, noise)
+        loss.backward(loss)
+        # Update the model parameters with the optimizer
+        optimizer.step()
+        optimizer.zero_grad()
+        losses.append(loss.item())
+    avg_loss = sum(losses) / len(train_dataloader)
+    print(f'Epoch:{epoch+1}, train loss: {avg_loss:.4f}')
+
     return losses
 
 
-def test(model, dataloader, epoch, work_dirs, device):
+def test(model, test_dataloader, noise_scheduler, epoch, device):
     model.eval()
-    # Keeping a record of the losses for later viewing
-    x, y = next(iter(dataloader))
-    x = x[:8]
-    # Get some data and prepare the corrupted version
-    # Data on the GPU
-    x = x.to(device)
-    # Corrupt with a range of amounts
-    amount = torch.linspace(0, 1, x.shape[0])
-    # Left to right -> more corruption
-    noised_x = corrupt(x, amount)
-    # Get the model predictions
-    with torch.no_grad():
-        preds = model(noised_x.to(device), 0).sample
-        preds = preds.detach().cpu()
+    losses = []
+    for step, batch in enumerate(test_dataloader):
+        clean_images = batch['images'].to(device)
+        # Sample noise to add to the images
+        noise = torch.randn(clean_images.shape).to(clean_images.device)
+        bs = clean_images.shape[0]
 
-    # Plot
-    fig, axs = plt.subplots(3, 1, figsize=(12, 7))
-    axs[0].set_title('Input data')
-    axs[0].imshow(make_grid(x)[0].clip(0, 1), cmap='Greys')
-    axs[1].set_title('Corrupted data')
-    axs[1].imshow(make_grid(noised_x)[0].clip(0, 1), cmap='Greys')
-    axs[2].set_title('Network Predictions')
-    axs[2].imshow(make_grid(preds)[0].clip(0, 1), cmap='Greys')
-    fig_name = f'{work_dirs}/epoch_{epoch}.png'
-    fig.savefig(fig_name)
-    return 0
+        # Sample a random timestep for each image
+        timesteps = torch.randint(0,
+                                  noise_scheduler.num_train_timesteps, (bs, ),
+                                  device=clean_images.device).long()
 
+        # Add noise to the clean images according to the noise magnitude at each timestep
+        noisy_images = noise_scheduler.add_noise(clean_images, noise,
+                                                 timesteps)
 
-def generate(model, n_steps, work_dirs, epoch, device):
-    x = torch.rand(8, 1, 28, 28).to(device)  # Start from random
-    step_history = [x.detach().cpu()]
-    pred_output_history = []
+        # Get the model prediction
+        noise_pred = model(noisy_images, timesteps, return_dict=False)[0]
 
-    for i in range(n_steps):
-        with torch.no_grad():
-            # No need to track gradients during inference
-            pred = model(x, 0).sample
-            # Predict the denoised x0
-        pred_output_history.append(pred.detach().cpu())
-        # Store model output for plotting
-        mix_factor = 1 / (n_steps - i)
-        # How much we move towards the prediction
-        x = x * (1 - mix_factor) + pred * mix_factor
-        # Move part of the way there
-        step_history.append(x.detach().cpu())
-        # Store step for plotting
+        # Calculate the loss
+        loss = F.mse_loss(noise_pred, noise)
+        losses.append(loss.item())
 
-    fig, axs = plt.subplots(n_steps, 2, figsize=(15, 7), sharex=True)
-    axs[0, 0].set_title('x (model input)')
-    axs[0, 1].set_title('model prediction')
-    for i in range(n_steps):
-        axs[i, 0].imshow(make_grid(step_history[i])[0].clip(0, 1),
-                         cmap='Greys')
-        axs[i, 1].imshow(make_grid(pred_output_history[i])[0].clip(0, 1),
-                         cmap='Greys')
-    fig_name = f'{work_dirs}/denosing_{epoch}.png'
-    fig.savefig(fig_name)
-    return 0
+    avg_loss = sum(losses) / len(test_dataloader)
+    print(f'Epoch:{epoch+1}, test loss: {avg_loss:.4f}')
+
+    return losses
 
 
-def train_loop(model, train_dataloader, test_dataloader, loss_fn, optimizer,
-               n_epochs, work_dirs, device):
-    total_losses = []
-    for epoch in range(n_epochs):
-        losses = train(model, train_dataloader, loss_fn, optimizer, epoch,
-                       device)
-        test(model, test_dataloader, epoch, work_dirs, device)
-        generate(model, 5, work_dirs, epoch, device)
-        total_losses += losses
-    return total_losses
+def train_loop(model, train_dataloader, test_dataloader, optimizer,
+               noise_scheduler, epochs, device):
+    train_losses = []
+    test_losses = []
+    for epoch in range(epochs):
+        train_loss = train(model, train_dataloader, optimizer, noise_scheduler,
+                           epoch, device)
+        test_loss = test(model, test_dataloader, noise_scheduler, epoch,
+                         device)
+        train_losses.extend(train_loss)
+        test_losses.extend(test_loss)
+    return train_losses, test_losses
 
 
-def main(work_dirs):
-
+def main():
+    # Mac users may need device = 'mps' (untested)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # How many runs through the data should we do?
-    n_epochs = 5
-    # Dataloader (you can mess with batch size)
+
+    # Check out https://huggingface.co/sd-dreambooth-library for loads of models from the community
+    model_id = 'sd-dreambooth-library/mr-potato-head'
+
+    # Load the pipeline
+    pipe = StableDiffusionPipeline.from_pretrained(
+        model_id, torch_dtype=torch.float16).to(device)
+    prompt = 'an abstract oil painting of sks mr potato head by picasso'
+    images = pipe(
+        prompt,
+        num_inference_steps=50,
+        guidance_scale=7.5,
+        batch_size=8,
+    )
+    # View the result
+    make_grid(images)
+
+    # Load the butterfly pipeline
+    butterfly_pipeline = DDPMPipeline.from_pretrained(
+        'johnowhitaker/ddpm-butterflies-32px').to(device)
+
+    # Create 8 images
+    images = butterfly_pipeline(batch_size=8).images
+
+    # View the result
+    make_grid(images)
+
+    dataset = load_dataset('huggan/smithsonian_butterflies_subset',
+                           split='train')
+
+    # Or load images from a local folder
+    # dataset = load_dataset("imagefolder", data_dir="path/to/folder")
+
+    # We'll train on 32-pixel square images, but you can try larger sizes too
+    image_size = 32
+    # You can lower your batch size if you're running out of GPU memory
     batch_size = 64
 
-    train_dataset = MNIST(
-        root='mnist/',
-        train=True,
-        download=True,
-        transform=ToTensor(),
-    )
-    test_dataset = MNIST(
-        root='mnist/',
-        train=False,
-        download=True,
-        transform=ToTensor(),
-    )
-    # Dataloader (you can mess with batch size)
-    batch_size = 128
-    train_dataloader = DataLoader(train_dataset,
-                                  batch_size=batch_size,
-                                  shuffle=True)
-    test_dataloder = DataLoader(test_dataset,
-                                batch_size=batch_size,
-                                shuffle=True)
+    # Define data augmentations
+    preprocess = transforms.Compose([
+        transforms.Resize((image_size, image_size)),  # Resize
+        transforms.RandomHorizontalFlip(),  # Randomly flip (data augmentation)
+        transforms.ToTensor(),  # Convert to tensor (0, 1)
+        transforms.Normalize([0.5], [0.5]),  # Map to (-1, 1)
+    ])
 
-    # Create the network
+    def transform(examples):
+        images = [
+            preprocess(image.convert('RGB')) for image in examples['image']
+        ]
+        return {'images': images}
+
+    dataset.set_transform(transform)
+
+    # Create a dataloader from the dataset to serve up the transformed images in batches
+    train_dataloader = torch.utils.data.DataLoader(dataset,
+                                                   batch_size=batch_size,
+                                                   shuffle=True)
+
+    noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
+
+    # Create a model
     model = UNet2DModel(
-        sample_size=28,  # the target image resolution
-        in_channels=1,  # the number of input channels, 3 for RGB images
-        out_channels=1,  # the number of output channels
+        sample_size=image_size,  # the target image resolution
+        in_channels=3,  # the number of input channels, 3 for RGB images
+        out_channels=3,  # the number of output channels
         layers_per_block=2,  # how many ResNet layers to use per UNet block
-        block_out_channels=(32, 64,
-                            64),  # Roughly matching our basic unet example
+        block_out_channels=(64, 128, 128,
+                            256),  # More channels -> more parameters
         down_block_types=(
             'DownBlock2D',  # a regular ResNet downsampling block
+            'DownBlock2D',
             'AttnDownBlock2D',  # a ResNet downsampling block with spatial self-attention
             'AttnDownBlock2D',
         ),
         up_block_types=(
             'AttnUpBlock2D',
             'AttnUpBlock2D',  # a ResNet upsampling block with spatial self-attention
+            'UpBlock2D',
             'UpBlock2D',  # a regular ResNet upsampling block
         ),
     )
     model.to(device)
-    # Our loss function
-    loss_fn = nn.MSELoss()
-    # The optimizer
-    opt = torch.optim.Adam(model.parameters(), lr=1e-3)
-    # The training loop
-    losses = train_loop(model, train_dataloader, test_dataloder, loss_fn, opt,
-                        n_epochs, work_dirs, device)
 
-    # View the loss curve
-    fig, axs = plt.subplots(1, 1, figsize=(12, 8))
-    plt.plot(losses)
-    plt.ylim(0, 0.1)
-    fig.savefig(f'{work_dirs}/loss.png')
+    # Set the noise scheduler
+    noise_scheduler = DDPMScheduler(num_train_timesteps=1000,
+                                    beta_schedule='squaredcos_cap_v2')
+
+    # Training loop
+    optimizer = torch.optim.AdamW(model.parameters(), lr=4e-4)
+
+    train_losses, test_losses = train_loop(model, train_dataloader, optimizer,
+                                           noise_scheduler, 10, device)
+
+    fig, axs = plt.subplots(2, 2, figsize=(12, 12))
+    axs[0].plot(train_losses)
+    axs[1].plot(np.log(train_losses))
+    axs[2].plot(test_losses)
+    axs[3].plot(np.log(test_losses))
+    plt.savefig('losses.png')
 
 
 if __name__ == '__main__':
-    main('work_dirs/huggingface')
+    main()
