@@ -10,6 +10,7 @@ from tqdm.auto import tqdm
 
 
 class ClassConditionedUnet(nn.Module):
+
     def __init__(self, num_classes=10, class_emb_size=4):
         super().__init__()
 
@@ -61,17 +62,18 @@ def train(model, noise_scheduler, dataloader, loss_fn, optimizer, epoch,
     model.train()
     losses = []
     # Keeping a record of the losses for later viewing
-    for x, y in dataloader:
+    for step, (x, y) in enumerate(dataloader):
         # Get some data and prepare the corrupted version
         # Data on the GPU
-        x = x.to(device)
+        x = x.to(device) * 2 - 1  # Data on the GPU (mapped to (-1, 1))
+        y = y.to(device)
         # Pick random noise amounts
         noise = torch.randn_like(x)
         timesteps = torch.randint(0, 999, (x.shape[0], )).long().to(device)
         noisy_x = noise_scheduler.add_noise(x, noise, timesteps)
         # Get the model prediction
-        pred = model(noisy_x, timesteps,
-                     y)  # Note that we pass in the labels y
+        pred = model(noisy_x, timesteps, y)
+        # Note that we pass in the labels y
         # Calculate the loss
         loss = loss_fn(pred, x)
         # How close is the output to the true 'clean' x?
