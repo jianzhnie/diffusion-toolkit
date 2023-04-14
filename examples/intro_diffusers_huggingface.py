@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 import torchvision
 from datasets import load_dataset
-from diffusers import (DDPMPipeline, DDPMScheduler, UNet2DModel)
+from diffusers import DDPMPipeline, DDPMScheduler, UNet2DModel
 from matplotlib import pyplot as plt
 from PIL import Image
 from torchvision import transforms
@@ -116,7 +116,7 @@ def main():
     images = butterfly_pipeline(batch_size=8).images
 
     # View the result
-    make_grid(images, filename="image_2.png")
+    make_grid(images, filename='image_2.png')
 
     dataset = load_dataset('huggan/smithsonian_butterflies_subset',
                            split='train')

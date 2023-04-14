@@ -117,7 +117,7 @@ def main():
     # Create new scheduler and set num inference steps
     sampling_scheduler = DDIMScheduler.from_pretrained(
         'google/ddpm-celebahq-256')
-    sampling_scheduler.set_timesteps(num_inference_steps=50)
+    sampling_scheduler.set_timesteps(num_inference_steps=40)
 
     sampling_example(
         image_pipe,

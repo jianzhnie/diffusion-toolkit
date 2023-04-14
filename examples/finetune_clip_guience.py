@@ -2,10 +2,8 @@ import open_clip
 import torch
 import torch.nn.functional as F
 import torchvision
-from datasets import load_dataset
 from diffusers import DDIMScheduler, DDPMPipeline
 from matplotlib import pyplot as plt
-from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm.auto import tqdm
 
@@ -15,7 +13,7 @@ def guidance_generate(work_dir):
     # Prepare pretrained model
     device = ('cuda' if torch.cuda.is_available() else 'cpu')
     clip_model, _, preprocess = open_clip.create_model_and_transforms(
-        "ViT-B-32", pretrained="openai")
+        'ViT-B-32', pretrained='openai')
     clip_model.to(device)
 
     # Transforms to resize and augment an image + normalize to match CLIP's training data
@@ -44,7 +42,7 @@ def guidance_generate(work_dir):
         return dists.mean()
 
     # Prepare dataset
-    prompt = "Red Rose (still life), red flower painting"  # @param
+    prompt = 'Red Rose (still life), red flower painting'  # @param
     # Explore changing this
     guidance_scale = 8  # @param
     n_cuts = 4  # @param
@@ -67,7 +65,7 @@ def guidance_generate(work_dir):
         model_input = scheduler.scale_model_input(x, t)
         # predict the noise residual
         with torch.no_grad():
-            noise_pred = image_pipe.unet(model_input, t)["sample"]
+            noise_pred = image_pipe.unet(model_input, t)['sample']
 
         cond_grad = 0
         for cut in range(n_cuts):
@@ -81,7 +79,7 @@ def guidance_generate(work_dir):
             cond_grad -= torch.autograd.grad(loss, x)[0] / n_cuts
 
         if i % 25 == 0:
-            print("Step:", i, ", Guidance loss:", loss.item())
+            print('Step:', i, ', Guidance loss:', loss.item())
 
         # Modify x based on this gradient
         alpha_bar = scheduler.alphas_cumprod[i]
