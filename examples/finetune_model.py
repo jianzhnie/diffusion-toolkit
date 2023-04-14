@@ -48,8 +48,8 @@ def sampling_example(image_pipe, scheduler, work_dir, device):
     return 0
 
 
-def train(image_pipe, scheduler, train_dataloader, optimizer,
-          grad_accumulation_steps, epoch, device):
+def train(image_pipe, sampling_scheduler, train_dataloader, optimizer,
+          lr_scheduler, grad_accumulation_steps, epoch, device):
     losses = []
     for step, batch in tqdm(enumerate(train_dataloader),
                             total=len(train_dataloader)):
@@ -59,16 +59,15 @@ def train(image_pipe, scheduler, train_dataloader, optimizer,
         bs = clean_images.shape[0]
 
         # Sample a random timestep for each image
-        timesteps = torch.randint(
-            0,
-            scheduler.num_inference_steps,
-            (bs, ),
-            device=clean_images.device,
-        ).long()
+        timesteps = torch.randint(0,
+                                  sampling_scheduler.num_inference_steps,
+                                  (bs, ),
+                                  device=clean_images.device).long()
 
         # Add noise to the clean images according to the noise magnitude at each timestep
         # (this is the forward diffusion process)
-        noisy_images = scheduler.add_noise(clean_images, noise, timesteps)
+        noisy_images = sampling_scheduler.add_noise(clean_images, noise,
+                                                    timesteps)
 
         # Get the model prediction for the noise
         noise_pred = image_pipe.unet(noisy_images,
@@ -89,18 +88,24 @@ def train(image_pipe, scheduler, train_dataloader, optimizer,
             optimizer.step()
             optimizer.zero_grad()
 
+        # Update the learning rate for the next epoch
+        lr_scheduler.step()
+
+    print(f'Epoch {epoch} step {step} loss: {loss.item():.4f}')
     avg_loss = sum(losses) / len(train_dataloader)
     print(f'Epoch {epoch} average loss: {avg_loss:.4f}')
     return losses
 
 
-def train_loop(image_pipe, scheduler, train_dataloader, optimizer,
-               grad_accumulation_steps, epochs, work_dirs, device):
+def train_loop(image_pipe, sampling_scheduler, train_dataloader, optimizer,
+               lr_scheduler, grad_accumulation_steps, epochs, work_dirs,
+               device):
     total_losses = []
     for epoch in range(epochs):
-        losses = train(image_pipe, scheduler, train_dataloader, optimizer,
-                       grad_accumulation_steps, epoch, device)
-        sampling_example(image_pipe, scheduler, work_dirs, device)
+        losses = train(image_pipe, sampling_scheduler, train_dataloader,
+                       optimizer, lr_scheduler, grad_accumulation_steps, epoch,
+                       device)
+        sampling_example(image_pipe, sampling_scheduler, work_dirs, device)
         total_losses += losses
     return total_losses
 
@@ -110,13 +115,14 @@ def main():
     image_pipe = DDPMPipeline.from_pretrained('google/ddpm-celebahq-256')
     image_pipe.to(device)
     # Create new scheduler and set num inference steps
-    scheduler = DDIMScheduler.from_pretrained('google/ddpm-celebahq-256')
-    scheduler.set_timesteps(num_inference_steps=40)
+    sampling_scheduler = DDIMScheduler.from_pretrained(
+        'google/ddpm-celebahq-256')
+    sampling_scheduler.set_timesteps(num_inference_steps=50)
 
     sampling_example(
         image_pipe,
-        scheduler,
-        work_dir='work_dirs/fintune/',
+        sampling_scheduler,
+        work_dir='work_dirs/denoised/',
         device=device,
     )
 
@@ -124,7 +130,7 @@ def main():
     dataset_name = 'huggan/smithsonian_butterflies_subset'  # @param
     dataset = load_dataset(dataset_name, split='train')
     image_size = 256  # @param
-    batch_size = 4  # @param
+    batch_size = 8  # @param
     preprocess = transforms.Compose([
         transforms.Resize((image_size, image_size)),
         transforms.RandomHorizontalFlip(),
@@ -142,15 +148,18 @@ def main():
 
     train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    num_epochs = 2  # @param
+    num_epochs = 10  # @param
     lr = 1e-5  # 2param
-    work_dirs = 'work_dirs'
-    grad_accumulation_steps = 2  # @param
+    work_dirs = 'work_dirs/finetune/'
+    grad_accumulation_steps = 4  # @param
     optimizer = torch.optim.AdamW(image_pipe.unet.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+
     losses = train_loop(image_pipe=image_pipe,
-                        scheduler=scheduler,
+                        sampling_scheduler=sampling_scheduler,
                         train_dataloader=train_dataloader,
                         optimizer=optimizer,
+                        lr_scheduler=scheduler,
                         grad_accumulation_steps=grad_accumulation_steps,
                         epochs=num_epochs,
                         work_dirs=work_dirs,
