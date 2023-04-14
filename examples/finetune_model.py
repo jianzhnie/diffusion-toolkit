@@ -44,7 +44,7 @@ def sampling_example(image_pipe, scheduler, work_dir, device):
                                                nrow=4).permute(1, 2, 0)
             axs[1].imshow(grid.cpu().clip(-1, 1) * 0.5 + 0.5)
             axs[1].set_title(f'Predicted denoised images (step {i})')
-            fig.savefig(f'{work_dir}/filename_{i}.png')
+            fig.savefig(f'{work_dir}/denoised-imgae_{i}.png')
     return 0
 
 
@@ -61,15 +61,14 @@ def train(image_pipe, scheduler, train_dataloader, optimizer,
         # Sample a random timestep for each image
         timesteps = torch.randint(
             0,
-            image_pipe.scheduler.num_train_timesteps,
+            scheduler.num_inference_steps,
             (bs, ),
             device=clean_images.device,
         ).long()
 
         # Add noise to the clean images according to the noise magnitude at each timestep
         # (this is the forward diffusion process)
-        noisy_images = image_pipe.scheduler.add_noise(clean_images, noise,
-                                                      timesteps)
+        noisy_images = scheduler.add_noise(clean_images, noise, timesteps)
 
         # Get the model prediction for the noise
         noise_pred = image_pipe.unet(noisy_images,
@@ -107,8 +106,7 @@ def train_loop(image_pipe, scheduler, train_dataloader, optimizer,
 
 
 def main():
-    device = ('mps' if torch.backends.mps.is_available() else
-              'cuda' if torch.cuda.is_available() else 'cpu')
+    device = ('cuda' if torch.cuda.is_available() else 'cpu')
     image_pipe = DDPMPipeline.from_pretrained('google/ddpm-celebahq-256')
     image_pipe.to(device)
     # Create new scheduler and set num inference steps
@@ -146,10 +144,9 @@ def main():
 
     num_epochs = 2  # @param
     lr = 1e-5  # 2param
-    work_dirs = 'work_dirs/'
+    work_dirs = 'work_dirs'
     grad_accumulation_steps = 2  # @param
     optimizer = torch.optim.AdamW(image_pipe.unet.parameters(), lr=lr)
-    image_pipe.scheduler = scheduler
     losses = train_loop(image_pipe=image_pipe,
                         scheduler=scheduler,
                         train_dataloader=train_dataloader,
