@@ -10,7 +10,6 @@ from tqdm.auto import tqdm
 
 
 class ClassConditionedUnet(nn.Module):
-
     def __init__(self, num_classes=10, class_emb_size=4):
         super().__init__()
 
@@ -21,8 +20,8 @@ class ClassConditionedUnet(nn.Module):
         # information (the class embedding)
         self.model = UNet2DModel(
             sample_size=28,  # the target image resolution
-            in_channels=1 +
-            class_emb_size,  # Additional input channels for class cond.
+            in_channels=1 + class_emb_size,
+            # Additional input channels for class cond.
             out_channels=1,  # the number of output channels
             layers_per_block=2,  # how many ResNet layers to use per UNet block
             block_out_channels=(32, 64, 64),
@@ -83,6 +82,7 @@ def train(model, noise_scheduler, dataloader, loss_fn, optimizer, epoch,
         optimizer.step()
         losses.append(loss.item())
 
+        print(f'Epoch {epoch}, step {step}: loss = {loss.item():05f}')
     # Print our the average of the loss values for this epoch:
     avg_loss = sum(losses) / len(dataloader)
     print(
