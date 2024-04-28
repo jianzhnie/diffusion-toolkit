@@ -1,24 +1,30 @@
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 from datasets import load_dataset
 from diffusers import DDPMPipeline, DDPMScheduler, UNet2DModel
 from matplotlib import pyplot as plt
 from PIL import Image
+from torch.utils.data import DataLoader
 from torchvision import transforms
 
 
-def show_images(x):
+def show_images(im_array: np.array) -> Image.Image:
     """Given a batch of images x, make a grid and convert to PIL."""
-    x = x * 0.5 + 0.5  # Map from (-1, 1) back to (0, 1)
-    grid = torchvision.utils.make_grid(x)
+    im_array = im_array * 0.5 + 0.5  # Map from (-1, 1) back to (0, 1)
+    grid = torchvision.utils.make_grid(im_array)
     grid_im = grid.detach().cpu().permute(1, 2, 0).clip(0, 1) * 255
     grid_im = Image.fromarray(np.array(grid_im).astype(np.uint8))
     return grid_im
 
 
-def make_grid(images, size=64, filename='output.png'):
+def make_grid(
+    images: Image.Image,
+    size: int = 64,
+    filename: str = 'output.png',
+) -> Image.Image:
     """Given a list of PIL images, stack them together into a line for easy
     viewing."""
     output_im = Image.new('RGB', (size * len(images), size))
@@ -28,10 +34,17 @@ def make_grid(images, size=64, filename='output.png'):
     return output_im
 
 
-def train(model, train_dataloader, optimizer, noise_scheduler, epoch, device):
+def train(
+    model: nn.Module,
+    loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    noise_scheduler: DDPMScheduler,
+    epoch: int,
+    device: torch.device,
+):
     model.train()
     losses = []
-    for step, batch in enumerate(train_dataloader):
+    for step, batch in enumerate(loader):
         clean_images = batch['images'].to(device)
         # Sample noise to add to the images
         noise = torch.randn(clean_images.shape).to(clean_images.device)
@@ -52,21 +65,29 @@ def train(model, train_dataloader, optimizer, noise_scheduler, epoch, device):
         # Calculate the loss
         loss = F.mse_loss(noise_pred, noise)
         loss.backward(loss)
+
         # Update the model parameters with the optimizer
         optimizer.step()
         optimizer.zero_grad()
         losses.append(loss.item())
-        print(f'Epoch:{epoch+1}, bacth: {step},  loss: {loss:.4f}')
-    avg_loss = sum(losses) / len(train_dataloader)
+        print(f'Epoch:{epoch+1}, bacth: {step}, loss: {loss:.4f}')
+
+    avg_loss = sum(losses) / len(loader)
     print(f'Epoch:{epoch+1}, train loss: {avg_loss:.4f}')
 
     return losses
 
 
-def test(model, test_dataloader, noise_scheduler, epoch, device):
+def test(
+    model: nn.Module,
+    loader: DataLoader,
+    noise_scheduler: DDPMScheduler,
+    epoch: int,
+    device: torch.device,
+):
     model.eval()
     losses = []
-    for step, batch in enumerate(test_dataloader):
+    for step, batch in enumerate(loader):
         clean_images = batch['images'].to(device)
         # Sample noise to add to the images
         noise = torch.randn(clean_images.shape).to(clean_images.device)
@@ -89,7 +110,7 @@ def test(model, test_dataloader, noise_scheduler, epoch, device):
         losses.append(loss.item())
         print(f'Epoch:{epoch+1}, bacth: {step},  loss: {loss:.4f}')
 
-    avg_loss = sum(losses) / len(test_dataloader)
+    avg_loss = sum(losses) / len(loader)
     print(f'Epoch:{epoch+1}, test loss: {avg_loss:.4f}')
 
     return losses
@@ -141,9 +162,7 @@ def main():
     dataset.set_transform(transform)
 
     # Create a dataloader from the dataset to serve up the transformed images in batches
-    train_dataloader = torch.utils.data.DataLoader(dataset,
-                                                   batch_size=batch_size,
-                                                   shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
 
@@ -179,7 +198,7 @@ def main():
 
     train_losses = train_loop(
         model,
-        train_dataloader,
+        dataloader,
         optimizer,
         noise_scheduler,
         epochs=10,

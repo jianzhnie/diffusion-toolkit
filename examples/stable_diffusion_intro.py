@@ -3,7 +3,7 @@ from io import BytesIO
 import requests
 import torch
 # We'll be exploring a number of pipelines today!
-from diffusers import (LMSDiscreteScheduler, StableDiffusionPipeline)
+from diffusers import LMSDiscreteScheduler, StableDiffusionPipeline
 from matplotlib import pyplot as plt
 from PIL import Image
 

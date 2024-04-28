@@ -16,6 +16,7 @@ def corrupt(x, amount):
 
 class BasicUNet(nn.Module):
     """A minimal UNet implementation."""
+
     def __init__(self, in_channels=1, out_channels=1):
         super().__init__()
         self.down_layers = torch.nn.ModuleList([

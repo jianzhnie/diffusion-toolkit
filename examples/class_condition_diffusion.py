@@ -10,6 +10,7 @@ from tqdm.auto import tqdm
 
 
 class ClassConditionedUnet(nn.Module):
+
     def __init__(self, num_classes=10, class_emb_size=4):
         super().__init__()
 
