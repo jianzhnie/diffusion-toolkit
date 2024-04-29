@@ -7,7 +7,7 @@ from torchvision.transforms import ToTensor
 from torchvision.utils import make_grid
 
 
-def corrupt(x, amount):
+def corrupt(x: torch.Tensor, amount: float):
     """Corrupt the input `x` by mixing it with noise according to `amount`"""
     noise = torch.rand_like(x)
     amount = amount.view(-1, 1, 1, 1)  # Sort shape so broadcasting works
@@ -17,7 +17,7 @@ def corrupt(x, amount):
 class BasicUNet(nn.Module):
     """A minimal UNet implementation."""
 
-    def __init__(self, in_channels=1, out_channels=1):
+    def __init__(self, in_channels: int = 1, out_channels: int = 1) -> None:
         super().__init__()
         self.down_layers = torch.nn.ModuleList([
             nn.Conv2d(in_channels, 32, kernel_size=5, padding=2),
@@ -33,19 +33,21 @@ class BasicUNet(nn.Module):
         self.downscale = nn.MaxPool2d(2)
         self.upscale = nn.Upsample(scale_factor=2)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         h = []
-        for i, l in enumerate(self.down_layers):
-            x = self.act(l(x))  # Through the layer and the activation function
-            if i < 2:  # For all but the third (final) down layer:
+        for idx, layer in enumerate(self.down_layers):
+            x = self.act(
+                layer(x))  # Through the layer and the activation function
+            if idx < 2:  # For all but the third (final) down layer:
                 h.append(x)  # Storing output for skip connection
                 x = self.downscale(x)  # Downscale ready for the next layer
 
-        for i, l in enumerate(self.up_layers):
-            if i > 0:  # For all except the first up layer
+        for idx, layer in enumerate(self.up_layers):
+            if idx > 0:  # For all except the first up layer
                 x = self.upscale(x)  # Upscale
                 x += h.pop()  # Fetching stored output (skip connection)
-            x = self.act(l(x))  # Through the layer and the activation function
+            x = self.act(
+                layer(x))  # Through the layer and the activation function
 
         return x
 
@@ -62,7 +64,7 @@ def train(model, dataloader, loss_fn, optimizer, epoch, device):
         # Pick random noise amounts
         noise_amount = torch.rand(x.shape[0]).to(device)
         # Create our noisy x
-        noisy_x = corrupt(x, noise_amount)
+        noisy_x = corrupt(x, noise_amount).to(device)
         # Get the model prediction
         pred = model(noisy_x)
         # Calculate the loss
@@ -87,8 +89,6 @@ def test(model, dataloader, epoch, work_dirs, device):
     x, y = next(iter(dataloader))
     x = x[:8]
     # Get some data and prepare the corrupted version
-    # Data on the GPU
-    x = x.to(device)
     # Corrupt with a range of amounts
     amount = torch.linspace(0, 1, x.shape[0])
     # Left to right -> more corruption
@@ -105,7 +105,7 @@ def test(model, dataloader, epoch, work_dirs, device):
     axs[1].imshow(make_grid(noised_x)[0].clip(0, 1), cmap='Greys')
     axs[2].set_title('Network Predictions')
     axs[2].imshow(make_grid(preds)[0].clip(0, 1), cmap='Greys')
-    fig_name = f'{work_dirs}/epoch_{epoch}.png'
+    fig_name = f'{work_dirs}/ddpm_scratch1/epoch_{epoch}.png'
     fig.savefig(fig_name)
     return 0
 
@@ -137,7 +137,7 @@ def generate(model, n_steps, work_dirs, epoch, device):
                          cmap='Greys')
         axs[i, 1].imshow(make_grid(pred_output_history[i])[0].clip(0, 1),
                          cmap='Greys')
-    fig_name = f'{work_dirs}/denosing_{epoch}.png'
+    fig_name = f'{work_dirs}/ddpm_scratch/denosing_{epoch}.png'
     fig.savefig(fig_name)
     return 0
 
@@ -157,15 +157,15 @@ def train_loop(model, train_dataloader, test_dataloader, loss_fn, optimizer,
 def main(work_dirs):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+    data_dir = '/home/robin/datasets/image_data/mnist/'
     train_dataset = MNIST(
-        root='mnist/',
+        root=data_dir,
         train=True,
         download=True,
         transform=ToTensor(),
     )
     test_dataset = MNIST(
-        root='mnist/',
+        root=data_dir,
         train=False,
         download=True,
         transform=ToTensor(),
@@ -181,8 +181,7 @@ def main(work_dirs):
     # How many runs through the data should we do?
     n_epochs = 5
     # Create the network
-    net = BasicUNet()
-    net.to(device)
+    net = BasicUNet().to(device)
     # Our loss function
     loss_fn = nn.MSELoss()
     # The optimizer
@@ -195,7 +194,7 @@ def main(work_dirs):
     fig, axs = plt.subplots(1, 1, figsize=(12, 8))
     plt.plot(losses)
     plt.ylim(0, 0.1)
-    fig.savefig(f'{work_dirs}/loss.png')
+    fig.savefig(f'{work_dirs}/ddpm_scratch/loss.png')
 
 
 if __name__ == '__main__':

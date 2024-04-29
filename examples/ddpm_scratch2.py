@@ -8,7 +8,7 @@ from torchvision.transforms import ToTensor
 from torchvision.utils import make_grid
 
 
-def corrupt(x, amount):
+def corrupt(x: torch.Tensor, amount: float):
     """Corrupt the input `x` by mixing it with noise according to `amount`"""
     noise = torch.rand_like(x)
     amount = amount.view(-1, 1, 1, 1)  # Sort shape so broadcasting works
@@ -52,8 +52,6 @@ def test(model, dataloader, epoch, work_dirs, device):
     x, y = next(iter(dataloader))
     x = x[:8]
     # Get some data and prepare the corrupted version
-    # Data on the GPU
-    x = x.to(device)
     # Corrupt with a range of amounts
     amount = torch.linspace(0, 1, x.shape[0])
     # Left to right -> more corruption
@@ -71,7 +69,7 @@ def test(model, dataloader, epoch, work_dirs, device):
     axs[1].imshow(make_grid(noised_x)[0].clip(0, 1), cmap='Greys')
     axs[2].set_title('Network Predictions')
     axs[2].imshow(make_grid(preds)[0].clip(0, 1), cmap='Greys')
-    fig_name = f'{work_dirs}/epoch_{epoch}.png'
+    fig_name = f'{work_dirs}/ddpm_scratch2/epoch_{epoch}.png'
     fig.savefig(fig_name)
     return 0
 
@@ -103,7 +101,7 @@ def generate(model, n_steps, work_dirs, epoch, device):
                          cmap='Greys')
         axs[i, 1].imshow(make_grid(pred_output_history[i])[0].clip(0, 1),
                          cmap='Greys')
-    fig_name = f'{work_dirs}/denosing_{epoch}.png'
+    fig_name = f'{work_dirs}/ddpm_scratch2/denosing_{epoch}.png'
     fig.savefig(fig_name)
     return 0
 
@@ -123,19 +121,15 @@ def train_loop(model, train_dataloader, test_dataloader, loss_fn, optimizer,
 def main(work_dirs):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # How many runs through the data should we do?
-    n_epochs = 5
-    # Dataloader (you can mess with batch size)
-    batch_size = 64
-
+    data_dir = '/home/robin/datasets/image_data/mnist/'
     train_dataset = MNIST(
-        root='mnist/',
+        root=data_dir,
         train=True,
         download=True,
         transform=ToTensor(),
     )
     test_dataset = MNIST(
-        root='mnist/',
+        root=data_dir,
         train=False,
         download=True,
         transform=ToTensor(),
@@ -148,7 +142,8 @@ def main(work_dirs):
     test_dataloder = DataLoader(test_dataset,
                                 batch_size=batch_size,
                                 shuffle=True)
-
+    # How many runs through the data should we do?
+    n_epochs = 5
     # Create the network
     model = UNet2DModel(
         sample_size=28,  # the target image resolution
@@ -181,8 +176,8 @@ def main(work_dirs):
     fig, axs = plt.subplots(1, 1, figsize=(12, 8))
     plt.plot(losses)
     plt.ylim(0, 0.1)
-    fig.savefig(f'{work_dirs}/loss.png')
+    fig.savefig(f'{work_dirs}/ddpm_scratch2/loss.png')
 
 
 if __name__ == '__main__':
-    main('work_dirs/huggingface')
+    main('work_dirs')
