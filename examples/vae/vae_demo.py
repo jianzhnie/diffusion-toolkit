@@ -220,24 +220,26 @@ def main() -> None:
     args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     kwargs = {'num_workers': 1, 'pin_memory': True}
     data_dir = '/home/robin/datasets/image_data/mnist'
-    args.work_dir = '/home/robin/work_dir/llms/diffusion-toolkit/examples/work_dir/vae/'
+    args.work_dir = './work_dir/vae/'
+    train_data = datasets.MNIST(
+        data_dir,
+        train=True,
+        download=False,
+        transform=transforms.ToTensor(),
+    )
     train_loader = torch.utils.data.DataLoader(
-        datasets.MNIST(
-            data_dir,
-            train=True,
-            download=False,
-            transform=transforms.ToTensor(),
-        ),
+        train_data,
         batch_size=args.batch_size,
         shuffle=True,
         **kwargs,
     )
+    test_data = datasets.MNIST(
+        data_dir,
+        train=False,
+        transform=transforms.ToTensor(),
+    )
     test_loader = torch.utils.data.DataLoader(
-        datasets.MNIST(
-            data_dir,
-            train=False,
-            transform=transforms.ToTensor(),
-        ),
+        test_data,
         batch_size=args.batch_size,
         shuffle=False,
         **kwargs,
