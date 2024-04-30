@@ -9,9 +9,8 @@ from tqdm.auto import tqdm
 
 
 def guidance_generate(work_dir):
-
     # Prepare pretrained model
-    device = ('cuda' if torch.cuda.is_available() else 'cpu')
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     clip_model, _, preprocess = open_clip.create_model_and_transforms(
         'ViT-B-32', pretrained='openai')
     clip_model.to(device)
@@ -36,8 +35,8 @@ def guidance_generate(work_dir):
         # Note: applies the above transforms
         input_normed = F.normalize(image_features.unsqueeze(1), dim=2)
         embed_normed = F.normalize(text_features.unsqueeze(0), dim=2)
-        dists = (input_normed.sub(embed_normed).norm(
-            dim=2).div(2).arcsin().pow(2).mul(2))
+        dists = input_normed.sub(embed_normed).norm(
+            dim=2).div(2).arcsin().pow(2).mul(2)
         # Squared Great Circle Distance
         return dists.mean()
 
@@ -83,7 +82,7 @@ def guidance_generate(work_dir):
 
         # Modify x based on this gradient
         alpha_bar = scheduler.alphas_cumprod[i]
-        x = (x.detach() + cond_grad * alpha_bar.sqrt())
+        x = x.detach() + cond_grad * alpha_bar.sqrt()
         # Note the additional scaling factor here!
 
         # Now step with scheduler

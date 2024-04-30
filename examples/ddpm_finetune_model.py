@@ -16,7 +16,6 @@ def sampling_example(image_pipe, scheduler, work_dir, device):
 
     # Loop through the sampling timesteps
     for i, t in tqdm(enumerate(scheduler.timesteps)):
-
         # Prepare model input
         model_input = scheduler.scale_model_input(x, t)
 
@@ -126,7 +125,7 @@ def train_loop(
 
 
 def main():
-    device = ('cuda' if torch.cuda.is_available() else 'cpu')
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     image_pipe = DDPMPipeline.from_pretrained('google/ddpm-celebahq-256')
     image_pipe.to(device)
     # Create new scheduler and set num inference steps
@@ -165,8 +164,8 @@ def main():
 
     num_epochs = 10  # @param
     lr = 1e-5  # 2param
-    work_dirs = 'work_dirs/finetune/'
     grad_accumulation_steps = 4  # @param
+    work_dirs = 'work_dirs/finetune/'
     optimizer = torch.optim.AdamW(image_pipe.unet.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 

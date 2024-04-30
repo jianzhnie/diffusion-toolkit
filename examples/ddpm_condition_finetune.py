@@ -98,7 +98,6 @@ def sampling_examples(model, noise_scheduler, epoch, work_dirs, device):
 
     # Sampling loop
     for i, t in tqdm(enumerate(noise_scheduler.timesteps)):
-
         # Get model pred
         with torch.no_grad():
             residual = model(x, t, y)
@@ -126,30 +125,41 @@ def train_loop(model, noise_scheduler, dataloader, loss_fn, optimizer,
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    data_dir = '/home/robin/datasets/image_data/mnist/'
 
     # Load the dataset
-    dataset = MNIST(root='mnist/',
+    dataset = MNIST(root=data_dir,
                     train=True,
                     download=True,
                     transform=ToTensor())
 
     # Redefining the dataloader to set the batch size higher than the demo of 8
     train_dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
+
     # Our network
     model = ClassConditionedUnet().to(device)
     # Create a scheduler
     noise_scheduler = DDPMScheduler(num_train_timesteps=1000,
                                     beta_schedule='squaredcos_cap_v2')
+
     # Our loss finction
     loss_fn = nn.MSELoss()
     # The optimizer
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     # How many runs through the data should we do?
     n_epochs = 10
-    work_dirs = 'work_dirs/condition/'
+    work_dirs = 'work_dirs/ddpm_condition/'
     # Train the model
-    losses = train_loop(model, noise_scheduler, train_dataloader, loss_fn, opt,
-                        n_epochs, work_dirs, device)
+    losses = train_loop(
+        model,
+        noise_scheduler,
+        train_dataloader,
+        loss_fn,
+        opt,
+        n_epochs,
+        work_dirs,
+        device,
+    )
 
     # View the loss curve
     fig, axs = plt.subplots(1, 1, figsize=(12, 8))
